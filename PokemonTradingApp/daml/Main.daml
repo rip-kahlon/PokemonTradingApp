@@ -1,0 +1,74 @@
+module Main where
+
+import Daml.Script
+
+type PokemonTradeRequestId = ContractId PokemonTradeRequest
+type PokemonTradeContractId = ContractId PokemonTradeContract
+
+-- Request
+template PokemonTradeRequest
+  with
+    owner: Party
+    requestor: Party
+    requested: Text
+    offered: Text
+    note: Text
+  where
+    signatory requestor
+    observer owner
+    choice Request : PokemonTradeRequestId
+      controller requestor
+      do create this
+    choice Modify : PokemonTradeRequestId
+      with
+        newOffer: Text
+      controller requestor
+      do create this with
+            offered = newOffer
+
+    choice RejectTrade : PokemonTradeRequestId
+      with
+        counterRequest: Text
+      controller owner
+      do create this with
+            note = counterRequest    
+    choice AcceptTrade : PokemonTradeContractId
+      controller owner
+      do create PokemonTradeContract with
+          owner = requestor
+          giver = owner
+          offered = offered
+          received = requested
+
+
+-- Contract
+template PokemonTradeContract with 
+        owner: Party
+        giver: Party
+        received: Text
+        offered: Text
+    where
+      signatory owner, giver
+
+-- test
+setup: Script PokemonTradeContractId
+setup = script do
+  ash <- allocateParty "Ash"
+  brock <- allocateParty "Brock"
+
+  brockProposes <- submit brock do
+      createCmd PokemonTradeRequest with
+        owner = ash
+        requestor = brock
+        requested = "Pikachu"
+        offered = "Squirtle"
+        note = "I want pikachu"
+    
+  ashRejects <- submit ash do
+      exerciseCmd brockProposes RejectTrade with counterRequest = "I'd like Charizard instead."
+    
+  brockModifies <- submit brock do
+      exerciseCmd ashRejects Modify with newOffer = "Charizard"
+
+  submit ash do 
+    exerciseCmd brockModifies AcceptTrade
